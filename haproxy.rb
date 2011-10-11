@@ -36,7 +36,7 @@ BACKENDSTRING = "BACKEND"
 class HaproxyStats
 	attr_accessor :haproxy_vars
 
-	
+
 	def initialize(section, instance, name)
 		@columnTypes = nil
 		@section = section
@@ -45,14 +45,14 @@ class HaproxyStats
 
 		#typei == type-instance
 		@haproxy_vars = {
-			"haproxy_status" => { 
-				:typei => [:server], 
+			"haproxy_status" => {
+				:typei => [:server],
 				:data_desc => ["status"]},
-			"haproxy_traffic" => { 
-				:typei => [:server, :total], 
+			"haproxy_traffic" => {
+				:typei => [:server, :total],
 				:data_desc => ["stot", "eresp", "chkfail"]},
-			"haproxy_sessions" => { 
-				:typei => [:server, :total], 
+			"haproxy_sessions" => {
+				:typei => [:server, :total],
 				:data_desc => ["qcur", "scur"]}
 		}
 
@@ -84,19 +84,20 @@ class HaproxyStats
 		end
 
 		input.each_with_index do |line, index|
-			if index == 0
+			if index == 0 or line.strip.empty?
 				next
 			end
 
-			if line =~ /^#{@section}/
+			if @section.nil? or line =~ /^#{@section}/
 				values = line.split(',')
+				name = if @section.nil? then values[@columnTypes["pxname"]] else @name end
 
 				if values[@columnTypes["svname"]] == BACKENDSTRING
 					backend_line = line.clone
 				else
 					@haproxy_vars.each do |type, data|
 						if data[:typei].include?(:server)
-							output << "PUTVAL #{@instance}/haproxy-#{@name}/"\
+							output << "PUTVAL #{@instance}/haproxy-#{name}/" \
 								+ type + "-" + \
 								values[@columnTypes["svname"]].downcase.gsub(/-/, '_') +\
 								" #{time}"
@@ -127,16 +128,17 @@ class HaproxyStats
 			end
 		end
 
-		
+
 		values = backend_line.split(",")
 		if values[@columnTypes["svname"]] != BACKENDSTRING
 			raise "Unable to find BACKEND string"
 		end
 
 		#handle backend string
+		name = if @section.nil? then "total" else @name end
 		@haproxy_vars.each do |type, data|
 			if data[:typei].include?(:total)
-				output << "PUTVAL #{@instance}/haproxy-#{@name}/"\
+				output << "PUTVAL #{@instance}/haproxy-#{name}/"\
 					+ type + "-total #{time}"
 				data[:data_desc].each_with_index do |column, index|
 					if values[@columnTypes[column]] == ""
@@ -164,7 +166,7 @@ class HaproxyStats
 		end
 
 		line = input[0..match]
-		
+
 		if line[0].chr != "#"
 			raise "Invalid input: No column types found"
 		end
@@ -213,8 +215,6 @@ begin
 
     #Check for required args
 	raise "Instance id is required" unless options[:instance]
-	raise "Section is required" unless options[:section]
-	raise "Name is required" unless options[:name]
 
 rescue SystemExit
     puts opts
