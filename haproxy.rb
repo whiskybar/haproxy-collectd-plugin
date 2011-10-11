@@ -37,11 +37,12 @@ class HaproxyStats
 	attr_accessor :haproxy_vars
 
 
-	def initialize(section, instance, name)
+	def initialize(section, instance, name, oneshot)
 		@columnTypes = nil
 		@section = section
 		@instance = instance
 		@name = name
+    @oneshot = oneshot
 
 		#typei == type-instance
 		@haproxy_vars = {
@@ -97,8 +98,8 @@ class HaproxyStats
 				else
 					@haproxy_vars.each do |type, data|
 						if data[:typei].include?(:server)
-							output << "PUTVAL #{@instance}/haproxy-#{name}/" \
-								+ type + "-" + \
+              prefix = @oneshot ? "" : "PUTVAL #{@instance}/haproxy"
+							output << prefix + name + "/" + type + "-" + \
 								values[@columnTypes["svname"]].downcase.gsub(/-/, '_') +\
 								" #{time}"
 							data[:data_desc].each_with_index do |column, index|
@@ -138,8 +139,8 @@ class HaproxyStats
 		name = (@section.nil? ? "total" : @name)
 		@haproxy_vars.each do |type, data|
 			if data[:typei].include?(:total)
-				output << "PUTVAL #{@instance}/haproxy-#{name}/"\
-					+ type + "-total #{time}"
+        prefix = @oneshot ? "" : "PUTVAL #{@instance}/haproxy-"
+				output << prefix + name + "/" + type + "-total #{time}"
 				data[:data_desc].each_with_index do |column, index|
 					if values[@columnTypes[column]] == ""
 						output << ":" << accumulator[type][index].to_s
@@ -198,6 +199,7 @@ opts.separator "Specific options:"
 opts.on("-sSOCKET", "--socket=SOCKET", "Location of the haproxy stats socket", "Default: /home/haproxy/haproxy-stats"){|str| options[:socket] = str}
 opts.on("-iINSTANCE", "--instance=INSTANCE", "Instance id"){|str| options[:instance] = str}
 opts.on("-wWAITTIME", "--wait=WAITTIME", "Time to wait between samples", "Default: 10"){|str| options[:wait_time] = str.to_i}
+opts.on("-o", "--oneshot", "Don't loop, don't print PUTVAL/instance") {options[:oneshot] = true}
 opts.on("-eSECTION", "--section=SECTION", "Haproxy section to search for stats") {|str| options[:section] = str}
 opts.on("-nNAME", "--name=NAME", "Config name for haproxy stats (ie www)"){|str| options[:name] = str}
 opts.separator ""
@@ -212,10 +214,6 @@ begin
     if ARGV.length == 0
         exit
     end
-
-    #Check for required args
-	raise "Instance id is required" unless options[:instance]
-
 rescue SystemExit
     puts opts
     exit
@@ -227,33 +225,29 @@ end
 
 #Options Done
 
-begin
-	socket_data = ""
+socket_data = ""
 
+stats = HaproxyStats.new(options[:section], options[:instance], options[:name], options[:oneshot])
 
-	stats = HaproxyStats.new(options[:section], options[:instance], options[:name])
+while true do
+	start_run = Time.now.to_i
+	next_run = start_run + options[:wait_time]
 
-	while true do
-		start_run = Time.now.to_i
-		next_run = start_run + options[:wait_time]
-
-		socket = UNIXSocket.open(options[:socket])
+  begin
+	  socket = UNIXSocket.open(options[:socket])
 		socket.write(STATSCOMMAND)
 		socket_data = socket.read
 		socket.close
 
 		puts stats.parse(socket_data, start_run)
+  ensure
+	  socket.close if !socket.nil? && !socket.closed?
+  end
 
-		#sleep until it's time to run again
-		while((time_left = (next_run - Time.now.to_i)) > 0) do
-		      sleep(time_left)
-	    end
-	end
+  break if options[:oneshot]
 
-rescue Exception => e
-	puts e
-	puts e.backtrace
-ensure
-	socket.close if !socket.nil? && !socket.closed?
+	#sleep until it's time to run again
+	while((time_left = (next_run - Time.now.to_i)) > 0) do
+		 sleep(time_left)
+	  end
 end
-
