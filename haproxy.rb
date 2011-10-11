@@ -84,13 +84,13 @@ class HaproxyStats
 		end
 
 		input.each_with_index do |line, index|
-			if index == 0 or line.strip.empty?
+			if index == 0 || line.strip.empty?
 				next
 			end
 
-			if @section.nil? or line =~ /^#{@section}/
+			if @section.nil? || line =~ /^#{@section}/
 				values = line.split(',')
-				name = if @section.nil? then values[@columnTypes["pxname"]] else @name end
+				name = (@section.nil? ? values[@columnTypes["pxname"]] : @name)
 
 				if values[@columnTypes["svname"]] == BACKENDSTRING
 					backend_line = line.clone
@@ -135,7 +135,7 @@ class HaproxyStats
 		end
 
 		#handle backend string
-		name = if @section.nil? then "total" else @name end
+		name = (@section.nil? ? "total" : @name)
 		@haproxy_vars.each do |type, data|
 			if data[:typei].include?(:total)
 				output << "PUTVAL #{@instance}/haproxy-#{name}/"\
